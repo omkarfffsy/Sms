@@ -431,18 +431,18 @@ class UIFactory:
 
     @staticmethod
     def admin_panel():
-        markup = InlineKeyboardMarkup(row_width=2)
-        markup.add(InlineKeyboardButton("📋 Manage Tasks", callback_data="adm_tasks"), InlineKeyboardButton("💸 Withdrawals", callback_data="adm_withdrawals"))
-        markup.add(InlineKeyboardButton("➕ Add Bal", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Deduct Bal", callback_data="adm_sub_bal"))
-        markup.add(InlineKeyboardButton("👥 Users List", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ Check User History", callback_data="adm_user_history"))
-        markup.add(InlineKeyboardButton("🚫 Ban/Unban User", callback_data="adm_ban_user"), InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"))
-        markup.add(InlineKeyboardButton("👑 Manage Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("🚧 Maintenance Mode", callback_data="adm_toggle_maint"))
-        markup.add(InlineKeyboardButton("🔍 Fetch API Codes", callback_data="adm_fetch_api"), InlineKeyboardButton("🏦 Change UPI", callback_data="adm_set_upi"))
-        markup.add(InlineKeyboardButton("📈 Global Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
-        markup.add(InlineKeyboardButton("⌛ Pending Trx", callback_data="adm_list_trx"), InlineKeyboardButton("🔍 Find Order", callback_data="adm_find_order"))
-        markup.add(InlineKeyboardButton("🌐 API Server", callback_data="adm_set_server"), InlineKeyboardButton("🔑 API Key", callback_data="adm_set_apikey"))
-        markup.add(InlineKeyboardButton("📢 Manage F-Sub", callback_data="adm_manage_fsub"), InlineKeyboardButton("☁️ Restore Data", callback_data="adm_restore_cloud"))
-        markup.add(InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
+        markup = InlineKeyboardMarkup()
+        markup.row(InlineKeyboardButton("👥 Users List", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ User History", callback_data="adm_user_history"))
+        markup.row(InlineKeyboardButton("➕ Add Bal", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Sub Bal", callback_data="adm_sub_bal"))
+        markup.row(InlineKeyboardButton("📋 Tasks", callback_data="adm_tasks"), InlineKeyboardButton("💸 Withdrawals", callback_data="adm_withdrawals"))
+        markup.row(InlineKeyboardButton("🚫 Ban User", callback_data="adm_ban_user"), InlineKeyboardButton("🚧 Maint. Mode", callback_data="adm_toggle_maint"))
+        markup.row(InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"), InlineKeyboardButton("📢 Force Sub", callback_data="adm_manage_fsub"))
+        markup.row(InlineKeyboardButton("🌐 API Server", callback_data="adm_set_server"), InlineKeyboardButton("🔑 API Key", callback_data="adm_set_apikey"))
+        markup.row(InlineKeyboardButton("📈 Global Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
+        markup.row(InlineKeyboardButton("🔍 Fetch APIs", callback_data="adm_fetch_api"), InlineKeyboardButton("🏦 Change UPI", callback_data="adm_set_upi"))
+        markup.row(InlineKeyboardButton("⌛ Pending Trx", callback_data="adm_list_trx"), InlineKeyboardButton("🔍 Find Order", callback_data="adm_find_order"))
+        markup.row(InlineKeyboardButton("👑 Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("☁️ Cloud Sync", callback_data="adm_restore_cloud"))
+        markup.row(InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
         return markup
 
     @staticmethod
@@ -510,19 +510,32 @@ def execute_live_search(message, menu_id):
     safe_delete_user_command(message) 
     query = message.text.strip().lower() if message.text else ""
     if len(query) > 30: query = query[:30]
+    
     if query == 'cancel': 
         return bot.edit_message_text("🛒 <b>Select a Quick Service or Search:</b>", message.chat.id, menu_id, reply_markup=UIFactory.hybrid_service_menu(message.from_user.id))
-    results = db.query("SELECT code, name FROM api_services WHERE LOWER(name) LIKE ? LIMIT 14", (f"%{query}%",))
-    if not results: return bot.edit_message_text(f"❌ No apps found for '{query}'.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("back_to_shop"))
+    
+    query_clean = query.replace("'", "").replace("s", "").strip() 
+    results = db.query("SELECT code, name FROM api_services WHERE LOWER(name) LIKE ? OR LOWER(name) LIKE ? LIMIT 14", (f"%{query}%", f"%{query_clean}%"))
+    
+    unique_res = {}
+    for c, n in (results or []):
+        if c not in unique_res: unique_res[c] = n
+        
+    if not unique_res: 
+        markup = InlineKeyboardMarkup(row_width=1)
+        markup.add(InlineKeyboardButton("🔄 Try Another Search", callback_data="action_search_app"))
+        markup.add(InlineKeyboardButton("⬅️ Back to Main Shop", callback_data="back_to_shop"))
+        return bot.edit_message_text(f"❌ No apps found for '<b>{query}</b>'.\n\n<i>Tip: Try keeping it short and sweet—like 'domino' instead of 'dominos'.</i>", message.chat.id, menu_id, reply_markup=markup)
+        
     markup = InlineKeyboardMarkup(row_width=2)
-    buttons = [InlineKeyboardButton(f"{name} - ₹{get_display_price(code):.2f}", callback_data=f"buy_srv_{code}") for code, name in results]
+    buttons = [InlineKeyboardButton(f"{name} - ₹{get_display_price(code):.2f}", callback_data=f"buy_srv_{code}") for code, name in unique_res.items()]
     markup.add(*buttons)
     markup.add(InlineKeyboardButton("⬅️ Back to Main Shop", callback_data="back_to_shop"))
     bot.edit_message_text(f"🔍 <b>Search Results for '{query}':</b>", message.chat.id, menu_id, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_shop")
 def back_to_main_shop(call):
-    if check_spam(call.fromuser.id): return
+    if check_spam(call.from_user.id): return
     bot.edit_message_text("🛒 <b>Select a Quick Service or Search:</b>", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.hybrid_service_menu(call.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_srv_"))
@@ -1210,7 +1223,7 @@ def admin_toggle_ban(message, menu_id):
         user = db.query("SELECT is_banned FROM users WHERE user_id = ?", (t_uid,))
         if not user: return bot.edit_message_text("❌ User not found in database.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
         new_status = 0 if user[0][0] == 1 else 1
-        db.execute("UPDATE users SET SET is_banned = ? WHERE user_id = ?", (new_status, t_uid))
+        db.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (new_status, t_uid))
         state = "BANNED 🚫" if new_status == 1 else "UNBANNED ✅"
         bot.edit_message_text(f"✅ User <code>{t_uid}</code> is now <b>{state}</b>.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
     except: bot.edit_message_text("❌ Invalid ID.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
