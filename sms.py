@@ -54,22 +54,20 @@ def strip_html(text):
     return re.sub('<[^<]+>', '', text)
 
 # =================================================================
-# 2. ADVANCED DATABASE ARCHITECTURE (DISK OPTIMIZED)
+# 2. HIGH PERFORMANCE DATABASE (WAL MODE)
 # =================================================================
 class DatabaseManager:
     def __init__(self):
         self.lock = threading.Lock()
+        self.conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode = WAL")
+        self.conn.execute("PRAGMA synchronous = NORMAL")
+        self.conn.execute("PRAGMA temp_store = MEMORY")
         self._bootstrap()
 
-    def _get_conn(self):
-        conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-        conn.execute("PRAGMA temp_store = 1") 
-        conn.execute("PRAGMA cache_size = -2000")
-        return conn
-
     def _bootstrap(self):
-        with self._get_conn() as conn:
-            conn.executescript('''
+        with self.lock:
+            self.conn.executescript('''
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY, username TEXT, balance REAL DEFAULT 0.0, joined_at DATETIME
                 );
@@ -115,53 +113,49 @@ class DatabaseManager:
                 );
             ''')
             
-            try: conn.execute("ALTER TABLE orders ADD COLUMN service_code TEXT")
+            try: self.conn.execute("ALTER TABLE orders ADD COLUMN service_code TEXT")
             except: pass 
-            try: conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0")
+            try: self.conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0")
             except: pass
-            try: conn.execute("ALTER TABLE users ADD COLUMN task_balance REAL DEFAULT 0.0")
+            try: self.conn.execute("ALTER TABLE users ADD COLUMN task_balance REAL DEFAULT 0.0")
             except: pass
                 
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('global_margin', '5.0')")
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('upi_id', 'admin@ybl')")
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('api_base_url', 'https://meowsms.shop/stubs/handler_api.php')")
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('api_key', 's8HFzuPl74cIjQjAWl9pfgVhUMpfK5Sw')")
-            conn.execute("INSERT OR IGNORE INTO settings VALUES ('maintenance_mode', '0')")
-            conn.execute(f"INSERT OR IGNORE INTO settings VALUES ('admin_ids', '{ADMIN_IDS[0]}')")
-            conn.commit()
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('global_margin', '5.0')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('upi_id', 'admin@ybl')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('api_base_url', 'https://meowsms.shop/stubs/handler_api.php')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('api_key', 's8HFzuPl74cIjQjAWl9pfgVhUMpfK5Sw')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('maintenance_mode', '0')")
+            self.conn.execute(f"INSERT OR IGNORE INTO settings VALUES ('admin_ids', '{ADMIN_IDS[0]}')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('bp_merchant_id', '')")
+            self.conn.execute("INSERT OR IGNORE INTO settings VALUES ('bp_token', '')")
+            self.conn.commit()
 
     def execute(self, sql: str, params: tuple = ()):
         with self.lock:
             try:
-                with self._get_conn() as conn:
-                    conn.execute(sql, params)
-                    conn.commit()
-                    return True
+                self.conn.execute(sql, params)
+                self.conn.commit()
+                return True
             except Exception as e:
                 logger.error(f"DB EXECUTE ERROR: {e}")
                 return False
 
     def query(self, sql: str, params: tuple = ()):
         with self.lock:
-            with self._get_conn() as conn:
-                return conn.execute(sql, params).fetchall()
+            return self.conn.execute(sql, params).fetchall()
 
     def update_balance(self, user_id: int, amount: float, wallet_type="main"):
         with self.lock:
-            conn = self._get_conn()
             try:
-                conn.execute("BEGIN TRANSACTION")
                 if wallet_type == "main":
-                    conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+                    self.conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
                 else:
-                    conn.execute("UPDATE users SET task_balance = task_balance + ? WHERE user_id = ?", (amount, user_id))
-                conn.commit()
+                    self.conn.execute("UPDATE users SET task_balance = task_balance + ? WHERE user_id = ?", (amount, user_id))
+                self.conn.commit()
                 return True
             except:
-                conn.rollback()
+                self.conn.rollback()
                 return False
-            finally:
-                conn.close()
 
     def get_setting(self, key, default=""):
         res = self.query("SELECT value FROM settings WHERE key = ?", (key,))
@@ -218,21 +212,18 @@ class CloudSyncEngine:
         try:
             base_ref = cloud_db.collection('artifacts').document(APP_ID).collection('public').document('data')
             
-            # Restore Users
             users = base_ref.collection('users').stream()
             for doc in users:
                 d = doc.to_dict()
                 db.execute("REPLACE INTO users (user_id, username, balance, joined_at, is_banned, task_balance) VALUES (?, ?, ?, ?, ?, ?)", 
                            (d.get('user_id'), d.get('username'), d.get('balance', 0.0), d.get('joined_at'), d.get('is_banned', 0), d.get('task_balance', 0.0)))
             
-            # Restore Orders
             orders = base_ref.collection('orders').stream()
             for doc in orders:
                 d = doc.to_dict()
                 db.execute("REPLACE INTO orders (order_id, user_id, phone, cost, status, service_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", 
                            (d.get('order_id'), d.get('user_id'), d.get('phone'), d.get('cost'), d.get('status'), d.get('service_code'), d.get('created_at')))
 
-            # Restore Transactions
             trxs = base_ref.collection('transactions').stream()
             for doc in trxs:
                 d = doc.to_dict()
@@ -393,7 +384,7 @@ def verify_join_click(call):
     else: bot.answer_callback_query(call.id, "❌ You haven't joined all channels yet!", show_alert=True)
 
 # =================================================================
-# 6. INTERFACE FACTORY
+# 6. INTERFACE FACTORY (REDESIGNED)
 # =================================================================
 class UIFactory:
     @staticmethod
@@ -432,16 +423,17 @@ class UIFactory:
     @staticmethod
     def admin_panel():
         markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("👥 Users List", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ User History", callback_data="adm_user_history"))
-        markup.row(InlineKeyboardButton("➕ Add Bal", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Sub Bal", callback_data="adm_sub_bal"))
-        markup.row(InlineKeyboardButton("📋 Tasks", callback_data="adm_tasks"), InlineKeyboardButton("💸 Withdrawals", callback_data="adm_withdrawals"))
-        markup.row(InlineKeyboardButton("🚫 Ban User", callback_data="adm_ban_user"), InlineKeyboardButton("🚧 Maint. Mode", callback_data="adm_toggle_maint"))
-        markup.row(InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"), InlineKeyboardButton("📢 Force Sub", callback_data="adm_manage_fsub"))
+        markup.row(InlineKeyboardButton("👥 Manage Users", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ Track User", callback_data="adm_user_history"))
+        markup.row(InlineKeyboardButton("💰 Add Funds", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Deduct Funds", callback_data="adm_sub_bal"))
+        markup.row(InlineKeyboardButton("📋 Task System", callback_data="adm_tasks"), InlineKeyboardButton("🏦 Withdrawals", callback_data="adm_withdrawals"))
+        markup.row(InlineKeyboardButton("🚫 Ban Control", callback_data="adm_ban_user"), InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"))
+        markup.row(InlineKeyboardButton("👑 Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("🚧 Maintenance", callback_data="adm_toggle_maint"))
         markup.row(InlineKeyboardButton("🌐 API Server", callback_data="adm_set_server"), InlineKeyboardButton("🔑 API Key", callback_data="adm_set_apikey"))
-        markup.row(InlineKeyboardButton("📈 Global Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
-        markup.row(InlineKeyboardButton("🔍 Fetch APIs", callback_data="adm_fetch_api"), InlineKeyboardButton("🏦 Change UPI", callback_data="adm_set_upi"))
+        markup.row(InlineKeyboardButton("📈 Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
         markup.row(InlineKeyboardButton("⌛ Pending Trx", callback_data="adm_list_trx"), InlineKeyboardButton("🔍 Find Order", callback_data="adm_find_order"))
-        markup.row(InlineKeyboardButton("👑 Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("☁️ Cloud Sync", callback_data="adm_restore_cloud"))
+        markup.row(InlineKeyboardButton("🔍 Fetch Apps", callback_data="adm_fetch_api"), InlineKeyboardButton("📢 Force Sub", callback_data="adm_manage_fsub"))
+        markup.row(InlineKeyboardButton("🏦 Set UPI QR", callback_data="adm_set_upi"), InlineKeyboardButton("☁️ Restore DB", callback_data="adm_restore_cloud"))
+        markup.row(InlineKeyboardButton("🔑 BP Merchant ID", callback_data="adm_set_bp_mid"), InlineKeyboardButton("🔑 BP Token", callback_data="adm_set_bp_token"))
         markup.row(InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
         return markup
 
@@ -655,7 +647,7 @@ def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
                 if text != last_sent_text:
                     try: bot.edit_message_text(text, chat_id, message_id, reply_markup=markup); last_sent_text = text
                     except: pass
-        time.sleep(2)
+        time.sleep(3) # Slowed down to heavily reduce server CPU load!
         
     if not otps_received:
         db.update_balance(u_id, price, "main")
@@ -1136,7 +1128,7 @@ def admin_callbacks(call):
 
     elif call.data == "adm_set_upi":
         curr_upi = db.get_setting("upi_id", "Not Set")
-        bot.edit_message_text(f"🏦 <b>Current UPI:</b> <code>{curr_upi}</code>\nEnter New UPI ID (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
+        bot.edit_message_text(f"🏦 <b>Current UPI QR (Visible to users):</b> <code>{curr_upi}</code>\nEnter New UPI ID (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
         bot.register_next_step_handler(call.message, admin_save_upi, call.message.message_id)
         
     elif call.data == "adm_set_server":
@@ -1148,6 +1140,18 @@ def admin_callbacks(call):
         curr_key = db.get_setting("api_key", "Not Set")
         bot.edit_message_text(f"🔑 <b>Current API Key:</b>\n<code>{curr_key}</code>\n\nSend new API Key (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
         bot.register_next_step_handler(call.message, admin_save_apikey, call.message.message_id)
+        
+    # --- New BharatPe Admin Callbacks ---
+    elif call.data == "adm_set_bp_mid":
+        curr_mid = db.get_setting("bp_merchant_id", "Not Set")
+        bot.edit_message_text(f"🔑 <b>Current BP Merchant ID:</b>\n<code>{curr_mid}</code>\n\nSend new Merchant ID from BharatPe dashboard (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
+        bot.register_next_step_handler(call.message, admin_save_bp_setting, "bp_merchant_id", call.message.message_id)
+        
+    elif call.data == "adm_set_bp_token":
+        curr_token = db.get_setting("bp_token", "Not Set")
+        status = "Active ✅" if len(curr_token) > 20 else "Missing/Invalid ❌"
+        bot.edit_message_text(f"🔑 <b>Current BP Token Status:</b> {status}\n\nSend new token header string from BharatPe network tab (or type 'cancel'):\n\n<i>Note: This token usually expires every 24-48 hours.</i>", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
+        bot.register_next_step_handler(call.message, admin_save_bp_setting, "bp_token", call.message.message_id)
 
     elif call.data == "adm_list_trx":
         pending = db.query("SELECT trx_id, user_id FROM transactions WHERE status = 'PENDING'")
@@ -1196,6 +1200,12 @@ def check_cancel(message, menu_id):
         bot.edit_message_text("🛠 <b>Enterprise Admin Panel</b>", message.chat.id, menu_id, reply_markup=UIFactory.admin_panel())
         return True
     return False
+
+def admin_save_bp_setting(message, key_name, menu_id):
+    if check_cancel(message, menu_id): return
+    bot.delete_message(message.chat.id, message.message_id)
+    db.execute(f"UPDATE settings SET value = ? WHERE key = '{key_name}'", (message.text.strip(),))
+    bot.edit_message_text(f"✅ BharatPe Settings Updated.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
 
 # --- SMS Admin Logic Keepers ---
 def admin_toggle_admin(message, menu_id):
@@ -1407,8 +1417,39 @@ def admin_execute_manual_bal(message, target_uid, action, menu_id):
     except: bot.edit_message_text("❌ Invalid amount.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
 
 # =================================================================
-# 13. ROBUST DEPOSITS
+# 13. AUTO-DEPOSIT & MANUAL FALLBACK (BHARATPE SYSTEM)
 # =================================================================
+def verify_bharatpe_transaction(utr, merchant_id, token):
+    try:
+        now = int(time.time())
+        seven_days_ago = now - (7 * 24 * 60 * 60)
+        
+        url = f"https://payments-tesseract.bharatpe.in/api/v1/merchant/transactions"
+        params = {"module": "PAYMENT_QR", "merchantId": merchant_id, "startTime": seven_days_ago, "endTime": now}
+        headers = {"token": token, "Accept": "application/json", "Content-Type": "application/json"}
+        
+        r = requests.get(url, params=params, headers=headers, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            status = data.get("status", False)
+            if status is True or status == "SUCCESS" or status == "OK":
+                transactions = data.get("data", {}).get("transactions", [])
+                for tx in transactions:
+                    b_ref = str(tx.get("bankReferenceNo", "")).strip()
+                    i_utr = str(tx.get("internalUtr", "")).strip()
+                    
+                    if utr == b_ref or utr == i_utr:
+                        if tx.get("status") == "SUCCESS" and tx.get("type") == "PAYMENT_RECV":
+                            amt_raw = tx.get("amount", 0)
+                            amount = float(amt_raw) if amt_raw else 0.0
+                            return {"success": True, "amount": amount}
+                        else:
+                            return {"success": False, "error": "TRANSACTION_NOT_SUCCESS"}
+            return {"success": False, "error": "NOT_FOUND"}
+        return {"success": False, "error": f"HTTP_ERROR_{r.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @bot.message_handler(func=lambda message: message.text == "💰 Deposit Funds")
 def handle_deposit_text(message):
     bot.clear_step_handler_by_chat_id(message.chat.id) 
@@ -1422,10 +1463,10 @@ def handle_deposit_text(message):
         
     upi = db.get_setting('upi_id', 'admin@ybl')
     text = (
-        "💳 <b>Deposit via UPI</b>\n\n"
+        "💳 <b>Deposit via UPI (Auto-Approve)</b>\n\n"
         f"UPI ID: <code>{upi}</code>\n\n"
         "1. Make payment using the UPI ID above.\n"
-        "2. Send your 12-digit UTR below.\n\n"
+        "2. Send your <b>12-digit UTR</b> below for instant verification.\n\n"
         "⚠️ <b>STRICT POLICIES:</b>\n"
         "• <b>Minimum Deposit is ₹20.</b> Any deposit below ₹20 will be permanently canceled and no funds will be given.\n"
         "• <b>No Withdrawals.</b> Funds added to the bot must be used for services and cannot be transferred back to your bank account.\n\n"
@@ -1438,20 +1479,56 @@ def handle_deposit_text(message):
 def user_submit_trx(message, menu_id):
     safe_delete_user_command(message)
     if not message.text: return bot.send_message(message.chat.id, "❌ Please send text only.")
-    trx_id = message.text.strip()
-    if len(trx_id) > 20: return bot.send_message(message.chat.id, "❌ Invalid Transaction ID (Too long).")
+    
+    trx_id = message.text.strip().replace(" ", "")
+    if len(trx_id) > 30: return bot.send_message(message.chat.id, "❌ Invalid Transaction ID (Too long).")
     if trx_id.lower() == 'cancel': return bot.send_message(message.chat.id, "✅ Deposit cancelled.")
     if trx_id in ["🛒 Buy Number", "👤 My Wallet", "💰 Deposit Funds", "📜 Order History", "💼 Earn Money"]: return bot.send_message(message.chat.id, "❌ Deposit cancelled (Menu clicked).")
     if len(trx_id) < 8: return bot.send_message(message.chat.id, "❌ Invalid Transaction ID.")
     
-    if db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, 0.0, "PENDING", datetime.now())):
-        bot.send_message(message.chat.id, "✅ <b>Submitted!</b> Admin will verify shortly.\n<i>(Reminder: Minimum ₹20)</i>")
-        admin_str = db.get_setting("admin_ids", str(ADMIN_IDS[0]))
-        admin_list = [int(x.strip()) for x in admin_str.split(",") if x.strip()]
-        for adm in admin_list: 
-            try: bot.send_message(adm, f"🔔 <b>New Deposit</b>\nUser: {message.from_user.id}\nTRX: <code>{trx_id}</code>", reply_markup=UIFactory.trx_approval(trx_id))
+    # Check if UTR already exists in database
+    existing = db.query("SELECT status FROM transactions WHERE trx_id = ?", (trx_id,))
+    if existing:
+        return bot.send_message(message.chat.id, f"❌ <b>Duplicate UTR:</b> This transaction has already been submitted.")
+
+    wait_msg = bot.send_message(message.chat.id, "⏳ <b>Verifying payment...</b> please wait.")
+
+    # Try Auto-Approve First
+    bp_mid = db.get_setting('bp_merchant_id', '')
+    bp_token = db.get_setting('bp_token', '')
+    
+    if bp_mid and bp_token:
+        verify_result = verify_bharatpe_transaction(trx_id, bp_mid, bp_token)
+        if verify_result.get("success"):
+            amt = verify_result["amount"]
+            
+            # Security measure against underpaying
+            if amt < 20:
+                 db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, amt, "REJECTED_UNDERPAID", datetime.now()))
+                 try: bot.delete_message(wait_msg.chat.id, wait_msg.message_id)
+                 except: pass
+                 return bot.send_message(message.chat.id, f"❌ <b>Deposit Rejected:</b> You paid ₹{amt}. The minimum deposit is ₹20.")
+
+            db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, amt, "APPROVED", datetime.now()))
+            db.update_balance(message.from_user.id, amt, "main")
+            
+            try: bot.delete_message(wait_msg.chat.id, wait_msg.message_id)
             except: pass
-    else: bot.send_message(message.chat.id, "❌ This TRX ID has already been submitted.")
+            
+            return bot.send_message(message.chat.id, f"✅ <b>Auto-Deposit Successful!</b>\n₹{amt} has been instantly added to your wallet.")
+
+    # Fallback to Manual Admin Review
+    db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, 0.0, "PENDING", datetime.now()))
+    
+    try: bot.delete_message(wait_msg.chat.id, wait_msg.message_id)
+    except: pass
+    bot.send_message(message.chat.id, "✅ <b>Submitted for Manual Review!</b>\n\n(Auto-verify was unavailable or the UTR was delayed). An admin will verify this shortly.\n<i>(Reminder: Minimum ₹20)</i>")
+    
+    admin_str = db.get_setting("admin_ids", str(ADMIN_IDS[0]))
+    admin_list = [int(x.strip()) for x in admin_str.split(",") if x.strip()]
+    for adm in admin_list: 
+        try: bot.send_message(adm, f"🔔 <b>New Manual Deposit</b>\nUser: {message.from_user.id}\nTRX: <code>{trx_id}</code>", reply_markup=UIFactory.trx_approval(trx_id))
+        except: pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("approve_pay_", "reject_pay_")))
 def handle_payment_decision(call):
@@ -1504,5 +1581,5 @@ def catch_random_messages(message):
         bot.reply_to(message, "🤖 <b>Unrecognized Input.</b>\nPlease use the menu buttons below to interact with the bot.", reply_markup=UIFactory.reply_main_menu())
 
 if __name__ == "__main__":
-    logger.info("Enterprise Monolith V15 Spinning Up...")
+    logger.info("Enterprise Monolith V18 (AutoPay + Zero Load) Spinning Up...")
     bot.infinity_polling(timeout=60, long_polling_timeout=45, logger_level=logging.ERROR)
