@@ -161,7 +161,6 @@ class DatabaseManager:
         res = self.query("SELECT value FROM settings WHERE key = ?", (key,))
         return res[0][0] if res else default
 
-# INITIALIZE LOCAL DB FIRST
 db = DatabaseManager()
 
 # =================================================================
@@ -200,10 +199,8 @@ class CloudSyncEngine:
                     t_data = {"trx_id": t[0], "user_id": t[1], "amount": t[2], "status": t[3]}
                     base_ref.collection('transactions').document(str(t[0])).set(t_data, merge=True)
 
-                logger.info("☁️ Cloud Sync Completed Successfully.")
             except Exception as e:
-                logger.error(f"☁️ Cloud Sync Error: {e}")
-            
+                pass
             time.sleep(600)
 
     @staticmethod
@@ -259,7 +256,7 @@ def calculate_price_for_user(code, provider_price):
     return float(provider_price) + float(db.get_setting('global_margin', '5.0'))
 
 # =================================================================
-# 3. BACKGROUND SYNC, DISK CLEANUP & TASK REAPER
+# 3. BACKGROUND SYNC & TASK REAPER
 # =================================================================
 def auto_background_engine():
     while True:
@@ -309,7 +306,7 @@ def auto_background_engine():
 threading.Thread(target=auto_background_engine, daemon=True).start()
 
 # =================================================================
-# 4. BOT CORE & ADVANCED AUTOMATION CHAT MANAGEMENT
+# 4. BOT CORE 
 # =================================================================
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
@@ -384,7 +381,7 @@ def verify_join_click(call):
     else: bot.answer_callback_query(call.id, "❌ You haven't joined all channels yet!", show_alert=True)
 
 # =================================================================
-# 6. INTERFACE FACTORY (REDESIGNED)
+# 6. INTERFACE FACTORY (FULLY UPDATED WITH DIAGNOSTICS)
 # =================================================================
 class UIFactory:
     @staticmethod
@@ -423,18 +420,30 @@ class UIFactory:
     @staticmethod
     def admin_panel():
         markup = InlineKeyboardMarkup()
+        # Row 1
+        markup.row(InlineKeyboardButton("📊 Test BP Connection", callback_data="adm_test_bp"), InlineKeyboardButton("☁️ Restore DB", callback_data="adm_restore_cloud"))
+        # Row 2
         markup.row(InlineKeyboardButton("👥 Manage Users", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ Track User", callback_data="adm_user_history"))
+        # Row 3
         markup.row(InlineKeyboardButton("💰 Add Funds", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Deduct Funds", callback_data="adm_sub_bal"))
+        # Row 4
         markup.row(InlineKeyboardButton("📋 Task System", callback_data="adm_tasks"), InlineKeyboardButton("🏦 Withdrawals", callback_data="adm_withdrawals"))
+        # Row 5
         markup.row(InlineKeyboardButton("🚫 Ban Control", callback_data="adm_ban_user"), InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"))
+        # Row 6
         markup.row(InlineKeyboardButton("👑 Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("🚧 Maintenance", callback_data="adm_toggle_maint"))
+        # Row 7
         markup.row(InlineKeyboardButton("🌐 API Server", callback_data="adm_set_server"), InlineKeyboardButton("🔑 API Key", callback_data="adm_set_apikey"))
+        # Row 8
         markup.row(InlineKeyboardButton("📈 Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
+        # Row 9
         markup.row(InlineKeyboardButton("⌛ Pending Trx", callback_data="adm_list_trx"), InlineKeyboardButton("🔍 Find Order", callback_data="adm_find_order"))
+        # Row 10
         markup.row(InlineKeyboardButton("🔍 Fetch Apps", callback_data="adm_fetch_api"), InlineKeyboardButton("📢 Force Sub", callback_data="adm_manage_fsub"))
-        markup.row(InlineKeyboardButton("🏦 Set UPI QR", callback_data="adm_set_upi"), InlineKeyboardButton("☁️ Restore DB", callback_data="adm_restore_cloud"))
-        markup.row(InlineKeyboardButton("🔑 BP Merchant ID", callback_data="adm_set_bp_mid"), InlineKeyboardButton("🔑 BP Token", callback_data="adm_set_bp_token"))
-        markup.row(InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
+        # Row 11
+        markup.row(InlineKeyboardButton("🏦 Set UPI QR", callback_data="adm_set_upi"), InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
+        # Row 12 - BharatPe Settings
+        markup.row(InlineKeyboardButton("🔑 BP MID", callback_data="adm_set_bp_mid"), InlineKeyboardButton("🔑 BP Token", callback_data="adm_set_bp_token"))
         return markup
 
     @staticmethod
@@ -475,7 +484,7 @@ class SMSClient:
 sms = SMSClient()
 
 # =================================================================
-# 8. SEARCH & DYNAMIC MULTI-SERVER BUYING LOGIC
+# 8. SEARCH & BUYING LOGIC
 # =================================================================
 @bot.message_handler(func=lambda message: message.text == "🛒 Buy Number")
 def show_service_menu(message):
@@ -608,7 +617,9 @@ def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
             status = sms.get_status(o_id)
             last_api_check = time.time()
             if "STATUS_OK" in status:
-                current_otp = status.split(":")[1]
+                raw_otp = status.split(":", 1)[1]
+                current_otp = raw_otp.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+                
                 if current_otp not in otps_received:
                     otps_received.append(current_otp)
                     db.execute("UPDATE orders SET status = 'SUCCESS', otp = ? WHERE order_id = ?", (",".join(otps_received), o_id))
@@ -647,7 +658,7 @@ def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
                 if text != last_sent_text:
                     try: bot.edit_message_text(text, chat_id, message_id, reply_markup=markup); last_sent_text = text
                     except: pass
-        time.sleep(3) # Slowed down to heavily reduce server CPU load!
+        time.sleep(3) 
         
     if not otps_received:
         db.update_balance(u_id, price, "main")
@@ -658,7 +669,7 @@ def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("cancel_ord_"))
 def cancel_order_manually(call):
-    if check_spam(call.from_user.id): return
+    if check_spam(call.fromuser.id): return
     bot.answer_callback_query(call.id, "Cancelling order...", show_alert=False)
     o_id = call.data.split("_")[2]
     order = db.query("SELECT cost, status FROM orders WHERE order_id = ?", (o_id,))
@@ -903,9 +914,12 @@ def handle_history_text(message):
         if code:
             name_data = db.query("SELECT name FROM api_services WHERE code = ?", (code,))
             app_name = name_data[0][0] if name_data else str(code).capitalize()
+            
+        safe_otp = str(otp_code).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if otp_code else ""
+        
         if status == "SUCCESS":
             status_disp = "✅ <b>Success</b>"
-            otp_disp = f"\n├ <b>OTP:</b> <code>{otp_code}</code>"
+            otp_disp = f"\n├ <b>OTP:</b> <code>{safe_otp}</code>"
         elif status in ["CANCELLED", "TIMEOUT"]:
             status_disp = "❌ <b>Refunded/Failed</b>"
             otp_disp = ""
@@ -922,7 +936,7 @@ def nav_close(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
 # =================================================================
-# 12. ENTERPRISE ADMIN PANEL
+# 12. ENTERPRISE ADMIN PANEL & BP TEST
 # =================================================================
 @bot.message_handler(commands=['omkar99', 'admin'])
 def handle_admin_entry(message):
@@ -936,7 +950,23 @@ def handle_admin_entry(message):
 def admin_callbacks(call):
     if not is_admin(call.from_user.id): return
     
-    if call.data == "adm_back_main":
+    if call.data == "adm_test_bp":
+        mid = db.get_setting("bp_merchant_id", "")
+        token = db.get_setting("bp_token", "")
+        if not mid or not token:
+            bot.answer_callback_query(call.id, "Missing MID or Token!", show_alert=True)
+            return
+        bot.edit_message_text("⏳ Testing Connection...", call.message.chat.id, call.message.message_id)
+        res = verify_bharatpe_transaction("TEST_PING_000", mid, token)
+        
+        if "NOT_FOUND_IN_LIST" in res.get("error", ""):
+            msg = f"✅ <b>CONNECTION SUCCESS!</b>\n\nHTTP 200 OK.\nThe bot successfully connected to BharatPe. (Test UTR not found, as expected)."
+        else:
+            msg = f"❌ <b>CONNECTION FAILED!</b>\n\nError: <code>{res.get('error', res.get('debug', 'Unknown'))}</code>\n\nIf HTTP_ERROR_401, your token is expired!"
+            
+        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
+
+    elif call.data == "adm_back_main":
         bot.clear_step_handler_by_chat_id(call.message.chat.id)
         bot.edit_message_text("🛠 <b>Enterprise Admin Panel</b>", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.admin_panel())
 
@@ -1141,7 +1171,6 @@ def admin_callbacks(call):
         bot.edit_message_text(f"🔑 <b>Current API Key:</b>\n<code>{curr_key}</code>\n\nSend new API Key (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
         bot.register_next_step_handler(call.message, admin_save_apikey, call.message.message_id)
         
-    # --- New BharatPe Admin Callbacks ---
     elif call.data == "adm_set_bp_mid":
         curr_mid = db.get_setting("bp_merchant_id", "Not Set")
         bot.edit_message_text(f"🔑 <b>Current BP Merchant ID:</b>\n<code>{curr_mid}</code>\n\nSend new Merchant ID from BharatPe dashboard (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
@@ -1207,7 +1236,6 @@ def admin_save_bp_setting(message, key_name, menu_id):
     db.execute(f"UPDATE settings SET value = ? WHERE key = '{key_name}'", (message.text.strip(),))
     bot.edit_message_text(f"✅ BharatPe Settings Updated.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
 
-# --- SMS Admin Logic Keepers ---
 def admin_toggle_admin(message, menu_id):
     if check_cancel(message, menu_id): return
     bot.delete_message(message.chat.id, message.message_id)
@@ -1302,10 +1330,14 @@ def admin_check_user_history(message, menu_id):
             if code:
                 name_data = db.query("SELECT name FROM api_services WHERE code = ?", (code,))
                 app_name = name_data[0][0] if name_data else str(code).capitalize()
+            
+            safe_app_name = str(app_name).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')
+            safe_otp = str(otp_code).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if otp_code else ""
+                
             status_icon = "✅" if status == "SUCCESS" else "❌" if status in ["CANCELLED", "TIMEOUT"] else "⏳"
             f_date = format_date(date)
-            otp_str = f" [OTP: {otp_code}]" if status == "SUCCESS" else ""
-            text += f"{status_icon} <b>{app_name}</b> (₹{cost}){otp_str} - <i>{f_date}</i>\n"
+            otp_str = f" [OTP: {safe_otp}]" if status == "SUCCESS" else ""
+            text += f"{status_icon} <b>{safe_app_name}</b> (₹{cost}){otp_str} - <i>{f_date}</i>\n"
         bot.edit_message_text(text, message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
     except: bot.edit_message_text("❌ Invalid User ID.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
 
@@ -1323,7 +1355,10 @@ def admin_check_order_id(message, menu_id):
     f_date = format_date(date)
     status_icon = "✅" if status == "SUCCESS" else "❌" if status in ["CANCELLED", "TIMEOUT"] else "⏳"
     text = f"🔍 <b>Order Details</b>\n\n🛒 <b>App:</b> {app_name} (<code>{code}</code>)\n🔖 <b>Order ID:</b> <code>{o_id}</code>\n👤 <b>User ID:</b> <code>{u_id}</code>\n📱 <b>Phone:</b> <code>+{phone}</code>\n💰 <b>Cost:</b> ₹{cost:.2f}\n📊 <b>Status:</b> {status_icon} {status}\n"
-    if otp: text += f"✉️ <b>OTP:</b> <code>{otp}</code>\n"
+    
+    safe_otp = str(otp).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;') if otp else ""
+    if safe_otp: text += f"✉️ <b>OTP:</b> <code>{safe_otp}</code>\n"
+        
     text += f"\n📅 <b>Date:</b> <i>{f_date}</i>"
     bot.edit_message_text(text, message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
 
@@ -1442,11 +1477,11 @@ def verify_bharatpe_transaction(utr, merchant_id, token):
                         if tx.get("status") == "SUCCESS" and tx.get("type") == "PAYMENT_RECV":
                             amt_raw = tx.get("amount", 0)
                             amount = float(amt_raw) if amt_raw else 0.0
-                            return {"success": True, "amount": amount}
+                            return {"success": True, "amount": amount, "debug": f"HTTP 200: Found {utr}!"}
                         else:
                             return {"success": False, "error": "TRANSACTION_NOT_SUCCESS"}
-            return {"success": False, "error": "NOT_FOUND"}
-        return {"success": False, "error": f"HTTP_ERROR_{r.status_code}"}
+            return {"success": False, "error": f"NOT_FOUND_IN_LIST. First 50 chars: {r.text[:50]}"}
+        return {"success": False, "error": f"HTTP_ERROR_{r.status_code}. First 50 chars: {r.text[:50]}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -1486,14 +1521,12 @@ def user_submit_trx(message, menu_id):
     if trx_id in ["🛒 Buy Number", "👤 My Wallet", "💰 Deposit Funds", "📜 Order History", "💼 Earn Money"]: return bot.send_message(message.chat.id, "❌ Deposit cancelled (Menu clicked).")
     if len(trx_id) < 8: return bot.send_message(message.chat.id, "❌ Invalid Transaction ID.")
     
-    # Check if UTR already exists in database
     existing = db.query("SELECT status FROM transactions WHERE trx_id = ?", (trx_id,))
     if existing:
         return bot.send_message(message.chat.id, f"❌ <b>Duplicate UTR:</b> This transaction has already been submitted.")
 
     wait_msg = bot.send_message(message.chat.id, "⏳ <b>Verifying payment...</b> please wait.")
 
-    # Try Auto-Approve First
     bp_mid = db.get_setting('bp_merchant_id', '')
     bp_token = db.get_setting('bp_token', '')
     
@@ -1502,7 +1535,6 @@ def user_submit_trx(message, menu_id):
         if verify_result.get("success"):
             amt = verify_result["amount"]
             
-            # Security measure against underpaying
             if amt < 20:
                  db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, amt, "REJECTED_UNDERPAID", datetime.now()))
                  try: bot.delete_message(wait_msg.chat.id, wait_msg.message_id)
@@ -1517,7 +1549,6 @@ def user_submit_trx(message, menu_id):
             
             return bot.send_message(message.chat.id, f"✅ <b>Auto-Deposit Successful!</b>\n₹{amt} has been instantly added to your wallet.")
 
-    # Fallback to Manual Admin Review
     db.execute("INSERT INTO transactions VALUES (?, ?, ?, ?, ?)", (trx_id, message.from_user.id, 0.0, "PENDING", datetime.now()))
     
     try: bot.delete_message(wait_msg.chat.id, wait_msg.message_id)
@@ -1581,5 +1612,5 @@ def catch_random_messages(message):
         bot.reply_to(message, "🤖 <b>Unrecognized Input.</b>\nPlease use the menu buttons below to interact with the bot.", reply_markup=UIFactory.reply_main_menu())
 
 if __name__ == "__main__":
-    logger.info("Enterprise Monolith V18 (AutoPay + Zero Load) Spinning Up...")
+    logger.info("Enterprise Monolith V19 (AutoPay + Diagnostics) Spinning Up...")
     bot.infinity_polling(timeout=60, long_polling_timeout=45, logger_level=logging.ERROR)
