@@ -10,7 +10,6 @@ from datetime import datetime
 from telebot import types
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-# --- NEW IMPORTS FOR CLOUD STORAGE ---
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore
@@ -19,11 +18,8 @@ except ImportError:
     FIREBASE_AVAILABLE = False
     print("WARNING: firebase-admin module not found. Run: pip install firebase-admin")
 
-# =================================================================
-# 1. SYSTEM CONFIGURATION & SECURITY
-# =================================================================
 BOT_TOKEN = "8286825977:AAFMeepQ_vHLGOlbydShBmRsrJnhWsqbtak"
-ADMIN_IDS = [7624898265]  # Omkar ID (Master Admin)
+ADMIN_IDS = [7624898265]
 COUNTRY_CODE = "22"
 DB_NAME = "userdata.db"
 APP_ID = "sms_monolith_live" 
@@ -53,9 +49,6 @@ def strip_html(text):
     if not text: return ""
     return re.sub('<[^<]+>', '', text)
 
-# =================================================================
-# 2. HIGH PERFORMANCE DATABASE (WAL MODE)
-# =================================================================
 class DatabaseManager:
     def __init__(self):
         self.lock = threading.Lock()
@@ -163,9 +156,6 @@ class DatabaseManager:
 
 db = DatabaseManager()
 
-# =================================================================
-# 2.5 ADVANCED CLOUD STORAGE ENGINE (FIRESTORE)
-# =================================================================
 cloud_db = None
 if FIREBASE_AVAILABLE:
     try:
@@ -231,7 +221,6 @@ class CloudSyncEngine:
         except Exception as e:
             return False, str(e)
 
-
 if FIREBASE_AVAILABLE:
     threading.Thread(target=CloudSyncEngine.sync_all_data, daemon=True, name="CloudSyncThread").start()
 
@@ -255,9 +244,6 @@ def calculate_price_for_user(code, provider_price):
     if c_data and c_data[0][0] is not None: return float(c_data[0][0])
     return float(provider_price) + float(db.get_setting('global_margin', '5.0'))
 
-# =================================================================
-# 3. BACKGROUND SYNC & TASK REAPER
-# =================================================================
 def auto_background_engine():
     while True:
         try:
@@ -305,9 +291,6 @@ def auto_background_engine():
 
 threading.Thread(target=auto_background_engine, daemon=True).start()
 
-# =================================================================
-# 4. BOT CORE 
-# =================================================================
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 def check_spam(user_id):
@@ -352,9 +335,6 @@ def stealth_admin_logger(user_id, service, raw_error):
             except: pass
     except: pass
 
-# =================================================================
-# 5. FORCE SUBSCRIBE MIDDLEWARE
-# =================================================================
 def check_fsub(user_id):
     channels = db.query("SELECT channel_id, channel_url FROM force_sub")
     if not channels: return True 
@@ -380,9 +360,6 @@ def verify_join_click(call):
         bot.send_message(call.message.chat.id, "✅ Welcome! You have full access.", reply_markup=UIFactory.reply_main_menu())
     else: bot.answer_callback_query(call.id, "❌ You haven't joined all channels yet!", show_alert=True)
 
-# =================================================================
-# 6. INTERFACE FACTORY (FULLY UPDATED WITH DIAGNOSTICS)
-# =================================================================
 class UIFactory:
     @staticmethod
     def reply_main_menu():
@@ -420,29 +397,18 @@ class UIFactory:
     @staticmethod
     def admin_panel():
         markup = InlineKeyboardMarkup()
-        # Row 1
         markup.row(InlineKeyboardButton("📊 Test BP Connection", callback_data="adm_test_bp"), InlineKeyboardButton("☁️ Restore DB", callback_data="adm_restore_cloud"))
-        # Row 2
         markup.row(InlineKeyboardButton("👥 Manage Users", callback_data="adm_users_list"), InlineKeyboardButton("🕵️ Track User", callback_data="adm_user_history"))
-        # Row 3
-        markup.row(InlineKeyboardButton("💰 Add Funds", callback_data="adm_add_bal"), InlineKeyboardButton("➖ Deduct Funds", callback_data="adm_sub_bal"))
-        # Row 4
+        markup.row(InlineKeyboardButton("💰 Add Main Bal", callback_data="adm_add_bal_main"), InlineKeyboardButton("➖ Sub Main Bal", callback_data="adm_sub_bal_main"))
+        markup.row(InlineKeyboardButton("💼 Add Task Bal", callback_data="adm_add_bal_task"), InlineKeyboardButton("➖ Sub Task Bal", callback_data="adm_sub_bal_task"))
         markup.row(InlineKeyboardButton("📋 Task System", callback_data="adm_tasks"), InlineKeyboardButton("🏦 Withdrawals", callback_data="adm_withdrawals"))
-        # Row 5
         markup.row(InlineKeyboardButton("🚫 Ban Control", callback_data="adm_ban_user"), InlineKeyboardButton("📢 Broadcast", callback_data="adm_broadcast"))
-        # Row 6
         markup.row(InlineKeyboardButton("👑 Admins", callback_data="adm_manage_admins"), InlineKeyboardButton("🚧 Maintenance", callback_data="adm_toggle_maint"))
-        # Row 7
         markup.row(InlineKeyboardButton("🌐 API Server", callback_data="adm_set_server"), InlineKeyboardButton("🔑 API Key", callback_data="adm_set_apikey"))
-        # Row 8
         markup.row(InlineKeyboardButton("📈 Margin", callback_data="adm_set_margin"), InlineKeyboardButton("💎 Custom Price", callback_data="adm_override_price"))
-        # Row 9
         markup.row(InlineKeyboardButton("⌛ Pending Trx", callback_data="adm_list_trx"), InlineKeyboardButton("🔍 Find Order", callback_data="adm_find_order"))
-        # Row 10
         markup.row(InlineKeyboardButton("🔍 Fetch Apps", callback_data="adm_fetch_api"), InlineKeyboardButton("📢 Force Sub", callback_data="adm_manage_fsub"))
-        # Row 11
         markup.row(InlineKeyboardButton("🏦 Set UPI QR", callback_data="adm_set_upi"), InlineKeyboardButton("❌ Close Panel", callback_data="ui_close"))
-        # Row 12 - BharatPe Settings
         markup.row(InlineKeyboardButton("🔑 BP MID", callback_data="adm_set_bp_mid"), InlineKeyboardButton("🔑 BP Token", callback_data="adm_set_bp_token"))
         return markup
 
@@ -454,9 +420,6 @@ class UIFactory:
     def trx_approval(trx_id):
         return InlineKeyboardMarkup().add(InlineKeyboardButton("✅ Approve", callback_data=f"approve_pay_{trx_id}"), InlineKeyboardButton("❌ Reject", callback_data=f"reject_pay_{trx_id}"))
 
-# =================================================================
-# 7. SMS PROVIDER CLIENT 
-# =================================================================
 class SMSClient:
     @staticmethod
     def request_number(service_code, server_id=None):
@@ -483,27 +446,11 @@ class SMSClient:
 
 sms = SMSClient()
 
-# =================================================================
-# 8. SEARCH & BUYING LOGIC
-# =================================================================
-@bot.message_handler(func=lambda message: message.text == "🛒 Buy Number")
-def show_service_menu(message):
-    bot.clear_step_handler_by_chat_id(message.chat.id)
-    safe_delete_user_command(message) 
-    u_id = message.from_user.id
-    if check_spam(u_id) == "BANNED": return bot.send_message(u_id, "🚫 <b>Access Denied:</b> You have been banned.")
-    if check_spam(u_id): return
-    if db.get_setting("maintenance_mode", "0") == "1":
-        return bot.send_message(message.chat.id, "🚧 <b>Bot is under maintenance.</b>\nBuying new numbers is temporarily paused.")
-    fsub = check_fsub(u_id)
-    if fsub is not True: return bot.send_message(u_id, "🛑 <b>Access Denied:</b> Join our channels first.", reply_markup=fsub)
-    msg = bot.send_message(message.chat.id, "🛒 <b>Select a Service or Search:</b>", reply_markup=UIFactory.hybrid_service_menu(u_id))
-    track_and_delete_old(message.chat.id, msg.message_id, 'user_shop')
-
 @bot.callback_query_handler(func=lambda call: call.data == "action_search_app")
 def trigger_search_engine(call):
     if check_spam(call.from_user.id) == "BANNED": return bot.answer_callback_query(call.id, "🚫 Banned", show_alert=True)
-    if check_spam(call.from_user.id): return
+    if check_spam(call.from_user.id): return bot.answer_callback_query(call.id, "⚠️ Too fast!", show_alert=False)
+    bot.answer_callback_query(call.id)
     bot.edit_message_text("🔍 <b>Search Engine:</b>\nType the name of the app (e.g. <code>Amazon</code>).\n\n<i>Type 'cancel' to abort.</i>", call.message.chat.id, call.message.message_id)
     bot.register_next_step_handler(call.message, execute_live_search, call.message.message_id)
 
@@ -534,16 +481,32 @@ def execute_live_search(message, menu_id):
     markup.add(InlineKeyboardButton("⬅️ Back to Main Shop", callback_data="back_to_shop"))
     bot.edit_message_text(f"🔍 <b>Search Results for '{query}':</b>", message.chat.id, menu_id, reply_markup=markup)
 
+@bot.message_handler(func=lambda message: message.text == "🛒 Buy Number")
+def show_service_menu(message):
+    bot.clear_step_handler_by_chat_id(message.chat.id)
+    safe_delete_user_command(message) 
+    u_id = message.from_user.id
+    if check_spam(u_id) == "BANNED": return bot.send_message(u_id, "🚫 <b>Access Denied:</b> You have been banned.")
+    if check_spam(u_id): return
+    if db.get_setting("maintenance_mode", "0") == "1":
+        return bot.send_message(message.chat.id, "🚧 <b>Bot is under maintenance.</b>\nBuying new numbers is temporarily paused.")
+    fsub = check_fsub(u_id)
+    if fsub is not True: return bot.send_message(u_id, "🛑 <b>Access Denied:</b> Join our channels first.", reply_markup=fsub)
+    msg = bot.send_message(message.chat.id, "🛒 <b>Select a Service or Search:</b>", reply_markup=UIFactory.hybrid_service_menu(u_id))
+    track_and_delete_old(message.chat.id, msg.message_id, 'user_shop')
+
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_shop")
 def back_to_main_shop(call):
-    if check_spam(call.from_user.id): return
+    if check_spam(call.from_user.id): return bot.answer_callback_query(call.id, "⚠️ Too fast!", show_alert=False)
+    bot.answer_callback_query(call.id)
     bot.edit_message_text("🛒 <b>Select a Quick Service or Search:</b>", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.hybrid_service_menu(call.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_srv_"))
 def process_service_click(call):
     u_id = call.from_user.id
     if check_spam(u_id) == "BANNED": return bot.answer_callback_query(call.id, "🚫 Banned", show_alert=True)
-    if check_spam(u_id): return
+    if check_spam(u_id): return bot.answer_callback_query(call.id, "⚠️ Too fast!", show_alert=False)
+    bot.answer_callback_query(call.id)
     code = call.data.split("buy_srv_")[1]
     servers = db.query("SELECT server_id, provider_price FROM live_servers WHERE code = ?", (code,))
     if not servers: servers = [("", 10.0)]
@@ -563,7 +526,8 @@ def process_service_click(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("runbuy_"))
 def handle_server_selection(call):
-    if check_spam(call.from_user.id): return
+    if check_spam(call.from_user.id): return bot.answer_callback_query(call.id, "⚠️ Too fast!", show_alert=False)
+    bot.answer_callback_query(call.id)
     parts = call.data.split("_")
     code = parts[1]
     srv_id = parts[2] if len(parts) > 2 else ""
@@ -593,9 +557,6 @@ def execute_final_buy(call, code, server_id, prov_price):
     db.execute("INSERT INTO orders (order_id, user_id, phone, cost, status, otp, created_at, service_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (o_id, u_id, phone, price, "WAITING", "", datetime.now(), code))
     threading.Thread(target=otp_watcher, args=(msg.chat.id, msg.message_id, o_id, u_id, price, phone)).start()
 
-# =================================================================
-# 9. HIGH-SPEED OTP WATCHER
-# =================================================================
 def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
     start_time, max_time, cancel_lock_time = time.time(), 1200, 130
     otps_received = []
@@ -669,7 +630,7 @@ def otp_watcher(chat_id, message_id, o_id, u_id, price, phone):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("cancel_ord_"))
 def cancel_order_manually(call):
-    if check_spam(call.fromuser.id): return
+    if check_spam(call.from_user.id): return bot.answer_callback_query(call.id, "⚠️ Too fast!", show_alert=False)
     bot.answer_callback_query(call.id, "Cancelling order...", show_alert=False)
     o_id = call.data.split("_")[2]
     order = db.query("SELECT cost, status FROM orders WHERE order_id = ?", (o_id,))
@@ -687,9 +648,6 @@ def request_next_otp(call):
     sms.set_status(call.data.split("_")[2], "3")
     bot.answer_callback_query(call.id, "Requested! Watch the live timer.", show_alert=True)
 
-# =================================================================
-# 10. TASK & EARN SYSTEM 
-# =================================================================
 @bot.message_handler(func=lambda message: message.text == "💼 Earn Money")
 def show_task_menu(message):
     bot.clear_step_handler_by_chat_id(message.chat.id)
@@ -762,7 +720,7 @@ def lock_task_for_user(call):
     if not current or (current[0][0] == 'LOCKED' and time.time() < current[0][1]):
         return bot.answer_callback_query(call.id, "Too late! Someone else just took it.", show_alert=True)
 
-    lock_time = time.time() + 1800 # 30 mins lock
+    lock_time = time.time() + 1800 
     db.execute("UPDATE tasks SET status = 'LOCKED', locked_by = ?, locked_until = ? WHERE task_id = ?", (u_id, lock_time, t_id))
     bot.answer_callback_query(call.id, "Locked for 30 minutes! Submit proof soon.", show_alert=True)
     call.data = f"view_task_{t_id}"
@@ -863,9 +821,6 @@ def execute_withdraw(message, method, max_bal, upi_id="N/A"):
             except: pass
     except: bot.send_message(message.chat.id, "❌ Invalid number.")
 
-# =================================================================
-# 11. MAIN NAVIGATION & RECEIPTS 
-# =================================================================
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     bot.clear_step_handler_by_chat_id(message.chat.id)
@@ -935,9 +890,6 @@ def handle_history_text(message):
 def nav_close(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
 
-# =================================================================
-# 12. ENTERPRISE ADMIN PANEL & BP TEST
-# =================================================================
 @bot.message_handler(commands=['omkar99', 'admin'])
 def handle_admin_entry(message):
     bot.clear_step_handler_by_chat_id(message.chat.id)
@@ -1095,7 +1047,7 @@ def admin_callbacks(call):
         
         u_id, amt = w_data[0]
         db.execute("UPDATE withdraw_requests SET status = 'REJECTED' WHERE w_id = ?", (w_id,))
-        db.update_balance(u_id, amt, "task") # Refund to task wallet
+        db.update_balance(u_id, amt, "task") 
         
         bot.edit_message_text(f"❌ Withdrawal {w_id} Rejected. Funds returned to user.", call.message.chat.id, call.message.message_id)
         try: bot.send_message(u_id, f"❌ <b>Withdrawal Rejected.</b> (ID: {w_id})\nFunds returned to Task Wallet.")
@@ -1194,9 +1146,11 @@ def admin_callbacks(call):
         text = "👥 <b>Top Users:</b>\n\n" + "".join([f"<code>{u}</code> | @{n if n else 'NoName'} | ₹{b:.1f}\n" for u, n, b in users]) if users else "No users."
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🔄 Refresh", callback_data="adm_users_list"), InlineKeyboardButton("⬅️ Back", callback_data="adm_back_main")))
 
-    elif call.data in ["adm_add_bal", "adm_sub_bal"]:
-        act = "ADD" if call.data == "adm_add_bal" else "DEDUCT"
-        bot.edit_message_text(f"👤 Enter User ID to <b>{act}</b> balance (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
+    elif call.data in ["adm_add_bal_main", "adm_sub_bal_main", "adm_add_bal_task", "adm_sub_bal_task"]:
+        parts = call.data.split("_")
+        act = "ADD" if parts[1] == "add" else "DEDUCT"
+        w_type = parts[3].upper() 
+        bot.edit_message_text(f"👤 Enter User ID to <b>{act}</b> {w_type} balance (or type 'cancel'):", call.message.chat.id, call.message.message_id, reply_markup=UIFactory.back_button("adm_back_main"))
         bot.register_next_step_handler(call.message, admin_ask_manual_amount, call.data, call.message.message_id)
 
 def admin_delete_task_by_id(message, menu_id):
@@ -1443,17 +1397,24 @@ def admin_execute_manual_bal(message, target_uid, action, menu_id):
     bot.delete_message(message.chat.id, message.message_id)
     try:
         amt = float(message.text.strip())
-        if action == "adm_sub_bal": amt = -amt
-        if not db.query("SELECT balance FROM users WHERE user_id = ?", (target_uid,)): return bot.edit_message_text("❌ User not found.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
-        db.update_balance(target_uid, amt, "main")
-        bot.edit_message_text(f"✅ Success. Adjusted ₹{abs(amt)} for {target_uid}.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
-        try: bot.send_message(target_uid, f"🎉 <b>Admin Update:</b> ₹{amt} applied to wallet.")
-        except: pass
-    except: bot.edit_message_text("❌ Invalid amount.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
+        parts = action.split("_")
+        is_sub = (parts[1] == "sub")
+        wallet_type = parts[3] 
 
-# =================================================================
-# 13. AUTO-DEPOSIT & MANUAL FALLBACK (BHARATPE SYSTEM)
-# =================================================================
+        if is_sub: amt = -amt
+
+        if not db.query("SELECT balance FROM users WHERE user_id = ?", (target_uid,)): 
+            return bot.edit_message_text("❌ User not found.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
+            
+        db.update_balance(target_uid, amt, wallet_type)
+        w_label = "Task Wallet" if wallet_type == "task" else "Main Wallet"
+        
+        bot.edit_message_text(f"✅ Success. Adjusted ₹{abs(amt)} in {w_label} for {target_uid}.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
+        try: bot.send_message(target_uid, f"🎉 <b>Admin Update:</b> ₹{amt} applied to your {w_label}.")
+        except: pass
+    except: 
+        bot.edit_message_text("❌ Invalid amount.", message.chat.id, menu_id, reply_markup=UIFactory.back_button("adm_back_main"))
+
 def verify_bharatpe_transaction(utr, merchant_id, token):
     try:
         now = int(time.time())
@@ -1590,9 +1551,6 @@ def finalize_approval(message, t_id, u_id):
         except: pass
     except: bot.send_message(message.chat.id, "❌ Invalid amount entered.")
 
-# =================================================================
-# 14. ADVANCED AUTO-MODERATION (THE BLACK HOLE)
-# =================================================================
 @bot.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio', 'sticker', 'voice'])
 def catch_random_messages(message):
     spam_status = check_spam(message.from_user.id)
