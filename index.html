@@ -1,0 +1,127 @@
+<!DOCTYPE html>  
+<html lang="en">  
+<head>  
+
+
+
+
+    <meta charset="UTF-8">  
+    <title>Study Hub</title>  
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#101418">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">  
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>  
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap">  
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">  
+    <link rel="stylesheet" href="style.css">
+</head>  
+<body> 
+
+    <div id="preloader">
+        <div class="loader-content">
+            <i class="fas fa-graduation-cap app-logo-icon"></i>
+            <div class="loader-text">STUDY HUB</div>
+        </div>
+    </div>  
+
+    <div id="modal-overlay" class="hidden">  
+        <div id="age-gate-modal" class="modal-box">  
+            <div class="modal-icon"><i class="fas fa-graduation-cap"></i></div>  
+            <h2 class="modal-title">Student Code of Conduct</h2>  
+            <p class="modal-subtitle">Commit to your success today.</p>  
+            <div class="terms-content">  
+                <p>Welcome to <strong>Study Hub</strong>. To get the maximum benefit from these resources, please agree to the following guidelines:</p>  
+                <ol>  
+                    <li><strong>Daily Consistency:</strong> I commit to attending my scheduled lectures and sticking to my study timetable.</li>  
+                    <li><strong>Active Note-Taking:</strong> I will maintain dedicated notebooks and actively take notes.</li>  
+                    <li><strong>Practice & Revision:</strong> I will solve the provided DPPs and review formulas regularly.</li>
+                    <li><strong>Zero Distractions:</strong> I will turn off notifications and avoid switching to social media.</li>  
+                </ol>  
+                <p style="margin-top: 10px; font-weight: 600; color: #00ddb5; text-align: center;">Success is the sum of small efforts, repeated day in and day out.</p>
+            </div>  
+            <div class="modal-actions">  
+                <button id="age-gate-no" class="pro-button secondary">Not Ready</button>  
+                <button id="age-gate-yes" class="pro-button primary">I Agree</button>  
+            </div>  
+        </div>  
+    </div>  
+
+<div id="app-wrapper" class="hidden">  
+    <main id="app-main-content">  
+
+        <div id="home-view" class="app-view">  
+            
+            <section id="hero-section">  
+                <div id="hero-slider"></div>  
+                <div id="hero-dots"></div>  
+                <button id="hero-prev" class="hero-nav-btn prev"><i class="fas fa-chevron-left"></i></button>  
+                <button id="hero-next" class="hero-nav-btn next"><i class="fas fa-chevron-right"></i></button>  
+            </section>  
+            
+            <div class="quick-links">
+                <button id="btn-playlist" class="pro-button secondary"><i class="fas fa-list-ol" style="color:#00ddb5;"></i> Chapter Playlist</button>
+                <button id="btn-notes" class="pro-button secondary"><i class="fas fa-book-open" style="color:#2AABEE;"></i> Notes & PDFs</button>
+            </div>
+
+            <div id="content-sections"></div>  
+        </div>  
+
+        <div id="search-view" class="app-view hidden">  
+            <header class="view-header"><h1 class="view-title">Search</h1></header>  
+            <div class="search-page-container">
+                <i class="fas fa-search"></i>
+                <input type="search" id="search-page-input" placeholder="Search any chapter or subject...">
+                <div id="search-suggestions" class="suggestions-container" aria-live="polite"></div>  
+            </div>  
+        </div>  
+
+        <div id="likes-view" class="app-view hidden">  
+            <header class="view-header"><h1 class="view-title">Bookmarked ❤️</h1></header>  
+            <div id="likes-grid" class="results-grid"></div>  
+        </div>  
+
+        <div id="profile-view" class="app-view hidden">  
+             <header class="view-header"><h1 class="view-title">Profile</h1></header>  
+            <div class="profile-header">
+                <div class="profile-avatar"><i class="fas fa-user-graduate"></i></div>
+                <h2>Dedicated Scholar</h2>
+            </div>  
+            <div class="profile-stats">  
+                <div class="stat-item"><h3 id="stat-total-likes" class="stat-value">0</h3><p class="stat-label">Bookmarks</p></div>  
+                <div class="stat-item"><h3 id="stat-movies-liked" class="stat-value">0</h3><p class="stat-label">Lectures</p></div>  
+                <div class="stat-item"><h3 id="stat-shows-liked" class="stat-value">0</h3><p class="stat-label">Notes</p></div>  
+            </div>  
+        </div>  
+          
+        <div id="watch-view" class="app-view hidden"></div>  
+        
+        <div id="category-view" class="app-view hidden"></div>  
+
+        <div id="directory-view" class="app-view hidden">
+            <header class="view-header">
+                <button id="dir-back-btn" class="pro-button small secondary back-btn-header"><i class="fas fa-arrow-left"></i></button>
+                <h1 class="view-title" id="dir-title">Directory</h1>
+            </header>
+            <div id="dir-container"></div>
+        </div>
+
+    </main>  
+</div>  
+
+<nav class="glass-nav hidden">  
+    <a href="#" class="nav-item active" data-view="home-view"><i class="fas fa-home"></i><span>Home</span></a>  
+    <a href="#" class="nav-item" data-view="search-view"><i class="fas fa-search"></i><span>Search</span></a>  
+    <a href="#" class="nav-item" data-view="likes-view"><i class="fas fa-bookmark"></i><span>Saved</span></a>  
+    <a href="#" class="nav-item" data-view="profile-view"><i class="fas fa-user"></i><span>Profile</span></a>  
+    <div class="nav-spotlight"></div>  
+</nav>  
+  
+<script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>  
+<script src="script.js" defer></script>
+
+</body>  
+</html>
